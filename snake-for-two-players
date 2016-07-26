@@ -1,0 +1,681 @@
+;-------------------------------------------------------------------
+; Marina Ivanovic
+; Game: Snake for two players
+; Winter seminar - Petnica, march 2016.
+;-------------------------------------------------------------------
+
+	org	32768
+
+main:
+	call	begin_game
+	call	game
+	call	end_game
+	
+	ret
+
+;--------------------------------------------------------------------
+; Sets the game to the default.
+;--------------------------------------------------------------------
+begin_game
+	call	clear_screen
+	call	set_players
+	call	draw_borders
+
+	ret
+
+; -------------------------------------------------------------------
+; Cleans the screen.
+; -------------------------------------------------------------------
+clear_screen:
+
+	ld	hl,16384
+	ld	bc, 6144
+
+_clear_screen_loop:
+
+	ld	(hl), 0
+	inc	hl
+	dec	bc
+	ld	a, b
+	or	c
+	jr	nz,_clear_screen_loop
+
+	ret
+
+;--------------------------------------------------------------------
+; Game initialization. Resets all parameters to the initial values.
+;--------------------------------------------------------------------
+set_players:
+	; Sets directions of both players.
+	ld	a, 0
+	ld	(dir_1), a
+	ld	(dir_2), a
+
+	ld	a, 0
+	ld	(plot), a
+	ld	a, 1
+	ld	(if_can_move), a
+
+	; Draws first player.
+	ld	bc, $3040
+	ld	(player_1), bc
+	call	plot_xy
+
+	; Draws second player.
+	ld	bc, $90C0
+	ld	(player_2), bc
+	call	plot_xy
+	ret
+
+;--------------------------------------------------------------------
+; Draws border at the beginning.
+;--------------------------------------------------------------------
+draw_borders:
+	
+	ld	b, 0
+	ld	c, 0
+_left_border:
+	call	plot_xy
+	inc	b
+	ld	a, b
+	sub	191
+	jp	nz, _left_border
+
+_down_border:
+	call	plot_xy
+	inc	c
+	ld	a, c
+	sub	255
+	jp	nz, _down_border
+
+_right_border:
+	call	plot_xy
+	dec	b
+	ld	a, b
+	jp	nz, _right_border
+
+_up_border:
+	call	plot_xy
+	dec	c
+	ld	a, c
+	jp	nz, _up_border
+	
+	ret
+
+;--------------------------------------------------------------------
+; The main game loop.
+;--------------------------------------------------------------------
+game:
+	halt
+	call	scan_keys
+
+	call	detect_collision
+	ld	a, (if_can_move)
+	cp	0
+	ret	z
+	
+	call	move_players
+
+	; Checks if is pressed key 0 = EXIT.
+	ld	bc, $EFFE
+	in	a, (c)
+	bit	0, a
+	jp	nz, game
+
+	ret
+
+;--------------------------------------------------------------------
+; Reads keys .
+; W(up), S(down), A(left), D(right) / PLAYER 1
+; I(up), K(down), J(left), L(right) / PLAYER 2
+;--------------------------------------------------------------------
+scan_keys:
+
+	; Checks if is pressed  A = LEFT / PLAYER_1.
+_scan_a:	
+	ld	bc, $FDFE
+	in	a, (c)
+	bit	0, a
+	jp	nz, _scan_d
+	ld	a, %00000010
+	ld	(dir_1), a
+	jp	_scan_player_2
+	
+	; Checks if is pressed  D = RIGHT / PLAYER_1.
+_scan_d:	
+	ld	bc, $FDFE
+	in	a, (c)
+	bit	2, a
+	jp	nz, _scan_s
+	ld	a, %00000001
+	ld	(dir_1), a
+	jp	_scan_player_2
+
+	; Checks if is pressed  S = DOWN / PLAYER_1.
+_scan_s:
+	ld	bc, $FDFE
+	in	a, (c)
+	bit	1, a
+	jp	nz, _scan_w
+	ld	a, %00001000
+	ld	(dir_1), a
+	jp	_scan_player_2
+
+	; Checks if is pressed  W = UP / PLAYER_1.
+_scan_w:	
+	ld	bc, $FBFE
+	in	a, (c)
+	bit	1, a
+	jp	nz, _scan_player_2
+	ld	a, %00000100
+	ld	(dir_1), a
+	jp	_scan_player_2
+
+_scan_player_2:
+
+	; Checks if is pressed  J = LEFT / PLAYER_2.
+_scan_j:
+	ld	bc, $BFFE
+	in	a, (c)
+	bit	3, a
+	jp	nz, _scan_l
+	ld	a, %00000010
+	ld	(dir_2), a
+	jp	_scan_done
+	
+	; Checks if is pressed  L = RIGHT / PLAYER_2.
+_scan_l:	
+	ld	bc, $BFFE
+	in	a, (c)
+	bit	1, a
+	jp	nz, _scan_k
+	ld	a, %00000001
+	ld	(dir_2), a
+	jp	_scan_done
+
+	; Checks if is pressed  K = DOWN / PLAYER_2.
+_scan_k:
+	ld	bc, $BFFE
+	in	a, (c)
+	bit	2, a
+	jp	nz, _scan_i
+	ld	a, %00001000
+	ld	(dir_2), a
+	jp	_scan_done
+
+	; Checks if is pressed  I = UP / PLAYER_2.
+_scan_i:
+	ld	bc, $DFFE
+	in	a, (c)
+	bit	2, a
+	jp	nz, _scan_done
+	ld	a, %00000100
+	ld	(dir_2), a
+	jp	_scan_done
+
+_scan_done:
+	ret
+
+;--------------------------------------------------------------------
+; Collision detection.
+;--------------------------------------------------------------------
+detect_collision:
+
+_find_player_1:
+	ld	a, (dir_1)
+	
+_find_right_1:
+	bit	0, a
+	jp	z, _find_left_1
+	ld	bc, (player_1)
+	inc	c
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_player_2
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_left_1:
+	bit	1, a
+	jp	z, _find_up_1
+	ld	bc, (player_1)
+	dec	c
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_player_2
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_up_1:
+	bit	2, a
+	jp	z, _find_down_1
+	ld	bc, (player_1)
+	dec	b
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_player_2
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_down_1:
+	bit	3, a
+	jp	z, _find_player_2
+	ld	bc, (player_1)
+	inc	b
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_player_2
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_player_2:
+	ld	a, (dir_2)
+	
+_find_right_2:
+	bit	0, a
+	jp	z, _find_left_2
+	ld	bc, (player_2)
+	inc	c
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	Z, _find_done
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_left_2:
+	bit	1, a
+	jp	z, _find_up_2
+	ld	bc, (player_2)
+	dec	c
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_done
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_up_2:
+	bit	2, a
+	jp	z, _find_down_2
+	ld	bc, (player_2)
+	dec	b
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_done
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_down_2:
+	bit	3, a
+	jp	z, _find_done
+	ld	bc, (player_2)
+	inc	b
+	call	find_xy
+	ld	a, (plot)
+	cp	0
+	jp	z, _find_done
+	ld	a, 0
+	ld	(if_can_move), a
+	ret
+
+_find_done:
+
+	ret
+
+;--------------------------------------------------------------------
+; Moves players.
+; 0 = R; 1 = L; 3 = U; 4 = D
+;--------------------------------------------------------------------
+move_players:
+	; Does not move players until the both of them pressed a key.
+	; Checks if the both of them pressed the key.
+	ld	a, (dir_1)
+	cp	0
+	ret	z
+	ld	a, (dir_2)
+	cp	0
+	ret	z
+
+	; Moves first player.
+	ld	a, (dir_1)
+	bit	0, a
+	call	nz, right_player_1
+	bit	1, a
+	call	nz, left_player_1
+	bit	2, a
+	call	nz, up_player_1
+	bit	3, a
+	call	nz, down_player_1
+
+	; Moves second player.
+	ld	a, (dir_2)
+	bit	0, a
+	call	nz, right_player_2
+	bit	1, a
+	call	nz, left_player_2
+	bit	2, a
+	call	nz, up_player_2
+	bit	3, a
+	call	nz, down_player_2
+
+	ret
+
+;--------------------------------------------------------------------
+; End of the game.
+;--------------------------------------------------------------------
+end_game:
+	ld	hl, 16384	
+	ld	bc, 6144	
+	ld	d, %10101010	
+	ld	e, 0	
+	
+_ln:	ld 	a, (hl)
+	or	d
+	ld	(hl), a
+	inc	hl	
+	dec	bc	
+		
+	ld	a, e
+	inc	e
+	jp	nz, _lm
+	
+	ld	a, d
+	xor	%11111111
+	ld	d, a
+	
+_lm:	ld	a, b
+	or	c
+	jp	nz, _ln
+	
+	; Ckecks if is pressed key 0 = EXIT
+_wait_end:
+	ld	bc, $EFFE
+	in	a, (c)
+	bit	0, a
+	jp	nz, _wait_end
+	
+	ret
+
+;--------------------------------------------------------------------
+; Moves first player left.
+;--------------------------------------------------------------------
+left_player_1:
+	ld	bc, (player_1)
+	call	left
+	ld	(player_1), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves second player left.
+;--------------------------------------------------------------------
+left_player_2:
+	ld	bc, (player_2)
+	call	left
+	ld	(player_2), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves first player right.
+;--------------------------------------------------------------------
+right_player_1:
+	ld	bc, (player_1)
+	call	right
+	ld	(player_1), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves second player rifht.
+;--------------------------------------------------------------------
+right_player_2:
+	ld	bc, (player_2)
+	call	right
+	ld	(player_2), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves first player down.
+;--------------------------------------------------------------------
+down_player_1:
+	ld	bc, (player_1)
+	call	down
+	ld	(player_1), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves second player down.
+;--------------------------------------------------------------------
+down_player_2:
+	ld	bc, (player_2)
+	call	down
+	ld	(player_2), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves first player up.
+;--------------------------------------------------------------------
+up_player_1:
+	ld	bc, (player_1)
+	call	up
+	ld	(player_1), bc
+	ret
+
+;--------------------------------------------------------------------
+; Moves second player up.
+;--------------------------------------------------------------------
+up_player_2:
+	ld	bc, (player_2)
+	call	up
+	ld	(player_2), bc
+	ret
+
+;--------------------------------------------------------------------
+; Draws snake left.
+;--------------------------------------------------------------------
+left:
+	dec	c
+	call	plot_xy
+	ret
+
+;--------------------------------------------------------------------
+; Draws snake right.
+;--------------------------------------------------------------------
+right:
+	inc	c
+	call	plot_xy
+	ret
+
+;--------------------------------------------------------------------
+; Draws snake down.
+;--------------------------------------------------------------------
+down:
+	inc	b
+	call	plot_xy
+	ret
+
+;--------------------------------------------------------------------
+; Draws snake up.
+;--------------------------------------------------------------------
+up:
+	dec	b
+	call	plot_xy
+	ret
+
+;--------------------------------------------------------------------
+; Sets point to the coordinates (X,Y).
+; BC = (YX). 
+;--------------------------------------------------------------------
+
+plot_xy:
+	push	af
+	push	bc
+	push	hl
+
+	; Calculate the address of the pixel.
+	; Result is in hl.
+	ld	a,b
+	call	calc_y_addr
+	ld	a,c
+	and	%11111000
+	srl	a
+	srl	a
+	srl	a
+	or	l
+	ld	l, a
+
+	ld	a,c
+	and	%00000111
+
+	ld	b,%10000000
+
+_pixel_shift:
+	
+	cp	0
+	jr	z,_shift_done	
+	srl	b
+	dec	a
+	jr	_pixel_shift
+	
+_shift_done:
+
+	ld	a,b
+	or	(hl)
+	ld	(hl),a
+	
+	pop	hl
+	pop	bc
+	pop	af
+	ret	
+
+;------------------------------------------------
+; Calculates the address of the byte, based to Y. 
+; Coordinates are in a.
+; a is organized as IIMMMNNN.
+; Finally, hl should be as 010IINNNMMM00000.
+;------------------------------------------------
+
+calc_y_addr:
+	; NNN in h.
+	ld	hl,$4000
+	push	af
+	and	%00000111
+	or	h
+	ld	h,a
+
+	; MMM in l.
+	pop	af
+	push	af
+	and	%00111000
+	sla	a
+	sla	a
+	or	l
+	ld	l,a
+
+	; II in h.
+	pop	af
+	push	af
+	and	%11000000
+	srl	a
+	srl	a
+	srl	a
+	or	h
+	ld	h,a
+
+	pop	af
+	ret
+
+;--------------------------------------------------------------------
+; Finds coordinates of the pixel.
+; (PLOT) = 0 if can be ploted.
+; BC = (YX). 
+;--------------------------------------------------------------------
+
+find_xy:
+	push	af
+	push	bc
+	push	hl
+
+	; Calculates the address of the pixel.
+	; Result is in hl.
+	ld	a,b
+	call	calc_y_addr
+	ld	a,c
+	and	%11111000
+	srl	a
+	srl	a
+	srl	a
+	or	l
+	ld	l,a
+
+	ld	a,c
+	and	%00000111
+
+	ld	b,%10000000
+
+_pixel_shift_fd:
+	
+	cp	0
+	jr	z,_shift_done_fd	
+	srl	b
+	dec	a
+	jr	_pixel_shift_fd
+	
+_shift_done_fd:
+	ld	a, b
+	and	(hl)
+	ld	(plot), a
+	
+	pop	hl
+	pop	bc
+	pop	af
+	ret	
+
+;--------------------------------------------------------------------
+; Current position / PLAYER 1
+; -------------------------------------------------------------------
+player_1:
+	dw	$3040
+
+;--------------------------------------------------------------------
+; Current position / PLAYER 2
+; -------------------------------------------------------------------
+player_2:
+	dw	$90C0
+
+;--------------------------------------------------------------------
+; Last pressed key / PLAYER 1
+;--------------------------------------------------------------------
+dir_1:
+	db	0
+
+;--------------------------------------------------------------------
+; Last pressed key / PLAYER 2
+;--------------------------------------------------------------------
+dir_2:
+	db	0
+
+;--------------------------------------------------------------------
+; 0: if can be ploted.
+;--------------------------------------------------------------------
+plot:
+	db	0
+
+;--------------------------------------------------------------------
+; 1: if can move without a collision;
+; 0: if cannot move without a collision.
+;--------------------------------------------------------------------
+if_can_move:
+	db	1
+
